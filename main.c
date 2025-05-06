@@ -132,6 +132,7 @@ int (*builtin_func[])(char **, int) = {&egg_cd, &egg_history, &egg_exit};
 
 uint8_t lex(struct token *t, const char **line);
 uint8_t parse(struct ast **out, const char *line);
+// PERF(daria): memory leaks from ast
 
 int main() {
   setlocale(LC_ALL, "");
@@ -612,13 +613,10 @@ uint8_t parse(struct ast **out, const char *line) {
         temp->pipe_right_child->type = AST_COMMAND;
         temp->pipe_right_child->command_name = t.value;
 
-        // Allocate memory for args
         size_t size = 3;
         temp->pipe_right_child->args =
             (struct ast **)calloc(sizeof(struct ast *), size);
         temp->pipe_right_child->nargs = 0;
-
-        // Parse arguments after the command
 
         // HACK(daria): pipe right child should be done with recursion
         while ((r = lex(&t, &l)) != TOKEN_EOF && r == TOKEN_STRING) {
