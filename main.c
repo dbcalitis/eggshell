@@ -117,9 +117,6 @@ void add_history(const char *line);
 int get_history(struct node **n, int dir);
 void clear_history();
 
-void preprocess_input(const char *input, char *output);
-int tokenize(char **args, char *input);
-
 int exec_from_path(char **args, int nargs);
 
 int egg_exit(char **args, int nargs);
@@ -181,7 +178,7 @@ int main() {
       disable_raw_mode();
       egg_execute_cmd(tree);
       enable_raw_mode();
-      // printf("DONE\n\rDONE\n\rDONE");
+
       _line[0] = '\0';
       printf("\r\n\r%s\n\r", curr_path);
     } else if (_input[0] == 11) { // CTRLK Go to older history
@@ -288,44 +285,6 @@ void clear_history() {
   history.length = 0;
 }
 
-void preprocess_input(const char *input, char *output) {
-  int j = 0;
-
-  for (int i = 0; input[i] != '\0'; i++) {
-    if (input[i] == '<' || input[i] == '>' || input[i] == '|' ||
-        input[i] == '&' || input[i] == ';') {
-      output[j++] = ' ';
-      output[j++] = input[i];
-
-      // for append ">>" and "&&"
-      if (input[i + 1] == input[i] && input[i] != '<') {
-        output[j++] = input[i++];
-      }
-
-      output[j++] = ' ';
-    } else {
-      output[j++] = input[i];
-    }
-  }
-
-  output[j] = '\0';
-}
-
-int tokenize(char **args, char *input) {
-  char processed[BUFF_SIZE];
-  preprocess_input(input, processed);
-
-  char *token = strtok(input, " ");
-  int n = 0;
-
-  while (token != NULL && n < BUFF_SIZE) {
-    args[n++] = token;
-    token = strtok(NULL, " ");
-  }
-
-  return n;
-}
-
 int exec_from_path(char **args, int nargs) {
   printf("\r\n\r");
 
@@ -423,7 +382,6 @@ int egg_execute_cmd(struct ast *head) {
       }
     } else {
       perror("fork");
-      // exit(EXIT_FAILURE);
     }
     break;
   }
@@ -455,7 +413,6 @@ int egg_execute_cmd(struct ast *head) {
         printf("\n\r");
         perror("open");
         return -1;
-        // exit(EXIT_FAILURE);
       }
 
       dup2(fd, STDIN_FILENO);
@@ -662,6 +619,8 @@ uint8_t parse(struct ast **out, const char *line) {
         temp->pipe_right_child->nargs = 0;
 
         // Parse arguments after the command
+
+        // HACK(daria): pipe right child should be done with recursion
         while ((r = lex(&t, &l)) != TOKEN_EOF && r == TOKEN_STRING) {
           if (temp->pipe_right_child->nargs + 1 > size) {
             size += 2;
