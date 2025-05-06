@@ -128,18 +128,10 @@ int egg_cd(char **args, int nargs);
 
 int egg_num_builtins();
 
-int egg_execute_cmd(struct ast *head); // TODO(daria)
+int egg_execute_cmd(struct ast *head);
 
 char *builtin_str[] = {"cd", "history", "exit"};
 int (*builtin_func[])(char **, int) = {&egg_cd, &egg_history, &egg_exit};
-
-void clear_args() {
-  for (int i = 0; i < BUFF_SIZE; i++) {
-    args[i] = NULL;
-  }
-
-  nargs = 0;
-}
 
 uint8_t lex(struct token *t, const char **line);
 uint8_t parse(struct ast **out, const char *line);
@@ -154,7 +146,6 @@ int main() {
   enable_raw_mode();
 
   int length = 0;
-  clear_args();
 
   curr_path = getcwd(NULL, 0);
 
