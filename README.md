@@ -7,12 +7,12 @@ Get it? egg, shell? Egg-xecute? I'll stop...
 # Features 
 Work in progress...
 - [X] Command execution
-- [] Built-in commands
+- [ ] Built-in commands
 - [X] Input/output redirection
 - [X] Piping
-- [] Background processes
+- [ ] Background processes
 - [X] Command history
-- [] Autocomplete
+- [ ] Autocomplete
 
 # other TODO
 - better error messages
