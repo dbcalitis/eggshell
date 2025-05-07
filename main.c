@@ -637,6 +637,7 @@ uint8_t parse(struct ast **out, const char *line) {
         fprintf(stderr, "Error: Expected command after pipe\n");
         exit(EXIT_FAILURE);
       }
+
       // parse(&temp->pipe_right_child, l);
       head = temp;
     } else if (r == TOKEN_REDIRECTION) {
