@@ -134,6 +134,8 @@ uint8_t lex(struct token *t, const char **line);
 uint8_t parse(struct ast **out, const char *line);
 // PERF(daria): memory leaks from ast
 
+// TODO(daria): use an allocator
+
 int main() {
   setlocale(LC_ALL, "");
   atexit(disable_raw_mode);
@@ -171,13 +173,13 @@ int main() {
       _line[strlen(_line) - 1] = '\0';
     } else if (_input[0] == 13) { // ENTER
       current_history = NULL;
-      add_history(_line);
 
       struct ast *tree;
       parse(&tree, _line);
 
       disable_raw_mode();
       egg_execute_cmd(tree);
+      add_history(_line);
       enable_raw_mode();
 
       _line[0] = '\0';
@@ -366,8 +368,22 @@ int egg_execute_cmd(struct ast *head) {
 
     args[nargs] = NULL;
 
-    // TODO(daria): add builtins
     printf("\n\r");
+
+    if (nargs > 0) {
+      if (strcmp(args[0], "exit") == 0) {
+        exit(EXIT_SUCCESS);
+      } else if (strcmp(args[0], "cd") == 0) {
+        egg_cd(args, nargs);
+        return 1;
+      } else if (strcmp(args[0], "history") == 0) {
+        egg_history(args, nargs);
+        return 1;
+      }
+    } else {
+      return 0;
+    }
+
     pid_t pid = fork();
 
     if (pid == 0) {
