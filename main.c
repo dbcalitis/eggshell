@@ -89,7 +89,7 @@ enum ast_type
 typedef struct ast AST;
 struct ast
 {
-    uint8_t type;
+    U8 type;
 
     union
     {
@@ -159,8 +159,8 @@ Int egg_execute_cmd(AST *head);
 char *builtin_str[] = {"cd", "history", "exit"};
 Int (*builtin_func[])(char **, Int) = {&egg_cd, &egg_history, /*&egg_exit*/};
 
-uint8_t lex(Token *t, const char **line);
-uint8_t parse(AST **out, const char *line);
+U8 lex(Token *t, const char **line);
+U8 parse(AST **out, const char *line);
 // PERF(daria): memory leaks from ast
 
 Int
@@ -567,7 +567,7 @@ egg_execute_cmd(AST *head)
   return 1;
 }
 
-uint8_t
+U8
 lex(
         Token *t,
         const char **line)
@@ -696,7 +696,7 @@ lex(
     return TOKEN_EOF;
 }
 
-uint8_t
+U8
 parse(
         AST **out,
         const char *line)
