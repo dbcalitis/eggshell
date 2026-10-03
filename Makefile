@@ -1,3 +1,3 @@
 
 main: main.c
-	gcc -o shell main.c
+	gcc -o eggshell main.c
