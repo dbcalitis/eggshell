@@ -148,7 +148,7 @@ void clear_history(void);
 
 Int exec_from_path(char **args /*, Int nargs*/);
 
-//Int egg_exit(char **args, Int nargs);
+Int egg_exit(char **args, Int nargs) { return 0; }
 Int egg_history(char **args, Int nargs);
 Int egg_cd(char **args, Int nargs);
 
@@ -156,11 +156,20 @@ Int egg_num_builtins(void);
 
 Int egg_execute_cmd(AST *head);
 
-char *builtin_str[] = {"cd", "history", "exit"};
-Int (*builtin_func[])(char **, Int) = {&egg_cd, &egg_history, /*&egg_exit*/};
+static char *builtin_str[] = {
+    "cd",
+    "history",
+    "exit"
+};
 
-U8 lex(Token *t, const char **line);
-U8 parse(AST **out, const char *line);
+static Int (*builtin_func[])(char **, Int) = {
+    egg_cd,
+    egg_history,
+    egg_exit
+};
+
+enum token_type lex(Token *t, const char **line);
+Int parse(AST **out, const char *line);
 // PERF(daria): memory leaks from ast
 
 Int
@@ -567,7 +576,7 @@ egg_execute_cmd(AST *head)
   return 1;
 }
 
-U8
+enum token_type
 lex(
         Token *t,
         const char **line)
@@ -696,7 +705,7 @@ lex(
     return TOKEN_EOF;
 }
 
-U8
+Int
 parse(
         AST **out,
         const char *line)
