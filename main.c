@@ -19,9 +19,20 @@
 
 #include <fcntl.h>
 
-#define static_arr_size(arr) (sizeof(arr) / sizeof(*(arr)))
+#include <stdint.h>
+#include <errno.h>
 
-#define uint8_t u_int8_t
+#define Int int
+#define S64 ssize_t
+#define U8 uint8_t
+#define U16 uint16_t
+#define U32 uint32_t
+#define U64 uint64_t
+
+#define Cast(x) (x)
+#define Unused(x) (void)(x)
+
+#define static_arr_size(arr) (sizeof(arr) / sizeof(*(arr)))
 
 #define BUFF_SIZE 100
 #define MAX_ARGS 20
@@ -42,17 +53,16 @@ struct linked_list
 {
   Node *head;
   Node *tail;
-  int length;
+  Int length;
 };
 
 Linked_List history = {.head = NULL, .tail = NULL, .length = 0};
 
 char *curr_path = NULL;
 
-char *args[BUFF_SIZE]; // edit the amount later
-int nargs = 0;
+char *egg_args[BUFF_SIZE]; // edit the amount later
+Int egg_nargs = 0;
 
-typedef enum token_type Token_Type;
 enum token_type
 {
     TOKEN_ERROR = -1,
@@ -67,7 +77,6 @@ enum token_type
     TOKEN_EOF
 };
 
-typedef enum ast_type AST_Type;
 enum ast_type
 {
     AST_COMMAND,
@@ -88,7 +97,7 @@ struct ast
         {
             char *command_name;
             AST **args;
-            int nargs;
+            Int nargs;
         };
 
         struct
@@ -115,14 +124,14 @@ struct ast
 typedef struct token Token;
 struct token
 {
-  Token_Type type;
+  enum token_type type;
   char *value;
 };
 
-AST
-*ast_new()
+AST *
+ast_new(void)
 {
-  AST *tree = (AST *)malloc(sizeof(AST));
+  AST *tree = Cast(AST *)malloc(sizeof(AST));
 
   return tree;
 }
@@ -130,42 +139,43 @@ AST
 char input_buffer[BUFF_SIZE] = "\0";
 char display_line[BUFF_SIZE] = "\0";
 
-void disable_raw_mode();
-void enable_raw_mode();
+void disable_raw_mode(void);
+void enable_raw_mode(void);
 
 void add_history(const char *line);
-int get_history(Node **n, int dir);
-void clear_history();
+Int get_history(Node **n, Int dir);
+void clear_history(void);
 
-int exec_from_path(char **args, int nargs);
+Int exec_from_path(char **args /*, Int nargs*/);
 
-int egg_exit(char **args, int nargs);
-int egg_history(char **args, int nargs);
-int egg_cd(char **args, int nargs);
+//Int egg_exit(char **args, Int nargs);
+Int egg_history(char **args, Int nargs);
+Int egg_cd(char **args, Int nargs);
 
-int egg_num_builtins();
+Int egg_num_builtins(void);
 
-int egg_execute_cmd(AST *head);
+Int egg_execute_cmd(AST *head);
 
 char *builtin_str[] = {"cd", "history", "exit"};
-int (*builtin_func[])(char **, int) = {&egg_cd, &egg_history, &egg_exit};
+Int (*builtin_func[])(char **, Int) = {&egg_cd, &egg_history, /*&egg_exit*/};
 
 uint8_t lex(Token *t, const char **line);
 uint8_t parse(AST **out, const char *line);
 // PERF(daria): memory leaks from ast
 
-int
-main()
+Int
+main(
+        void)
 {
     setlocale(LC_ALL, "");
     atexit(disable_raw_mode);
 
     // Clears the screen
-    printf("\e[1;1H\e[2J");
+    printf("\033[1;1H\033[2J");
 
     enable_raw_mode();
 
-    int length = 0;
+    S64 length = 0;
 
     curr_path = getcwd(NULL, 0);
 
@@ -185,7 +195,7 @@ main()
         length = read(STDIN_FILENO, input_buffer, sizeof(input_buffer));
 
         // Ignore Esc characters; includes arrow keys
-        if (input_buffer[0] == '\e') { continue; }
+        if (input_buffer[0] == '\033') { continue; }
 
         if (input_buffer[0] == 127) // BSPACE
         {
@@ -234,7 +244,7 @@ main()
         }
 
         // clears current display line
-        printf("\e[1G\e[2K");
+        printf("\033[1G\033[2K");
     }
 
     return 0;
@@ -242,7 +252,9 @@ main()
 
 void
 disable_raw_mode()
-{ tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios); }
+{
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
 
 void
 enable_raw_mode()
@@ -252,9 +264,9 @@ enable_raw_mode()
 
     // disables echo and canonical mode
     struct termios raw = orig_termios;
-    raw.c_iflag &= ~(IGNBRK | PARMRK | IGNCR | BRKINT | INPCK | ISTRIP | ICRNL | IXON);
-    raw.c_oflag &= ~(OPOST);
-    raw.c_lflag &= ~(ECHO | ECHONL | IEXTEN | ICANON | ISIG);
+    raw.c_iflag &= Cast(tcflag_t) ~(IGNBRK | PARMRK | IGNCR | BRKINT | INPCK | ISTRIP | ICRNL | IXON);
+    raw.c_oflag &= Cast(tcflag_t) ~(OPOST);
+    raw.c_lflag &= Cast(tcflag_t) ~(ECHO | ECHONL | IEXTEN | ICANON | ISIG);
     raw.c_cflag |= (CS8);
 
     raw.c_cc[VMIN] = 1;
@@ -294,8 +306,8 @@ void add_history(const char *line)
     history.length++;
 }
 
-int
-get_history(Node **n, int dir)
+Int
+get_history(Node **n, Int dir)
 {
     if (dir == 1) // go to older history
     {
@@ -340,25 +352,25 @@ clear_history()
     history.length = 0;
 }
 
-int
+Int
 exec_from_path(
-        char **args,
-        int nargs)
+        char **args
+        /*Int nargs*/)
 {
     printf("\r\n\r");
 
     disable_raw_mode();
-    int pid = fork();
+    Int pid = fork();
 
     if (pid == 0)
     {
-        int result = execvp(args[0], args);
+        Unused(execvp(args[0], args));
         perror("execvp");
         exit(0);
     }
     else
     {
-        int cpid = wait(NULL);
+        Unused(wait(NULL));
     }
 
     enable_raw_mode();
@@ -366,20 +378,10 @@ exec_from_path(
     return 1;
 }
 
-int
-egg_exit(
-        char **args,
-        int nargs)
-{
-    // kill children
-    // wait children
-    exit(0);
-}
-
-int
+Int
 egg_history(
         char **args,
-        int nargs)
+        Int nargs)
 {
     if (nargs == 1)
     {
@@ -401,12 +403,12 @@ egg_history(
     return 1;
 }
 
-int
+Int
 egg_cd(
         char **args,
-        int nargs)
+        Int nargs)
 {
-    int result;
+    Int result;
     if (nargs == 1)
     {
         result = chdir(getenv("HOME"));
@@ -429,13 +431,13 @@ egg_cd(
     return 1;
 }
 
-int
+Int
 egg_num_builtins() 
 { 
     return sizeof(builtin_str) / sizeof(char *);
 }
 
-int
+Int
 egg_execute_cmd(AST *head)
 {
     switch (head->type)
@@ -447,7 +449,7 @@ egg_execute_cmd(AST *head)
 
             args[0] = head->command_name;
 
-            for (int i = 0; i < head->nargs; i++)
+            for (Int i = 0; i < head->nargs; i++)
             {
                 if (head->args[i]->type == AST_STRING_LITERAL)
                 {
@@ -469,7 +471,7 @@ egg_execute_cmd(AST *head)
             }
             else if (pid > 0)
             {
-                int status;
+                Int status;
                 waitpid(pid, &status, 0);
 
                 if (WIFEXITED(status))
@@ -486,8 +488,8 @@ egg_execute_cmd(AST *head)
         case AST_REDIRECTION: {
             if (strcmp(head->redir_type, ">") == 0)
             {
-                int og_stdout = dup(STDOUT_FILENO);
-                int fd = open(head->target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                Int og_stdout = dup(STDOUT_FILENO);
+                Int fd = open(head->target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
                 if (fd < 0)
                 {
@@ -508,8 +510,8 @@ egg_execute_cmd(AST *head)
             }
             else if (strcmp(head->redir_type, "<") == 0)
             {
-                int og_stdin = dup(STDIN_FILENO);
-                int fd = open(head->target, O_RDONLY);
+                Int og_stdin = dup(STDIN_FILENO);
+                Int fd = open(head->target, O_RDONLY);
 
                 if (fd < 0)
                 {
@@ -526,9 +528,10 @@ egg_execute_cmd(AST *head)
                 dup2(og_stdin, STDIN_FILENO);
                 close(og_stdin);
             }
+            break;
         }
         case AST_PIPE: {
-            int pipefd[2];
+            Int pipefd[2];
             pipe(pipefd);
 
             pid_t pid1 = fork();
@@ -557,6 +560,7 @@ egg_execute_cmd(AST *head)
 
             waitpid(pid1, NULL, 0);
             waitpid(pid2, NULL, 0);
+            break;
         }
     }
 
@@ -572,9 +576,6 @@ lex(
 
     // ignore whitespace
     while (isspace(**line)) { (*line)++; }
-
-    int i = 0;
-    int j = -1; // number of tokens
 
     if (**s == '\0')
     {
@@ -705,8 +706,8 @@ parse(
 
     const char *l = line;
     Token t;
-    Token_Type r;
-    size_t size = 3; // size of ast.args
+    enum token_type r;
+    U64 size = 3; // size of ast.args
 
     while ((r = lex(&t, &l)) != TOKEN_EOF)
     {
@@ -726,7 +727,7 @@ parse(
             }
             else
             {
-                if (head->nargs + 1 > size)
+                if (Cast(U64)(head->nargs + 1) > size)
                 {
                     size += 2;
                     head->args = realloc(head->args, size);
@@ -753,19 +754,17 @@ parse(
                 temp->pipe_right_child->type = AST_COMMAND;
                 temp->pipe_right_child->command_name = t.value;
 
-                size_t size = 3;
-                temp->pipe_right_child->args =
-                (AST **)calloc(sizeof(AST *), size);
+                U64 right_size = 3;
+                temp->pipe_right_child->args = (AST **)calloc(sizeof(AST *), right_size);
                 temp->pipe_right_child->nargs = 0;
 
                 // HACK(daria): pipe right child should be done with recursion
                 while ((r = lex(&t, &l)) != TOKEN_EOF && r == TOKEN_STRING)
                 {
-                    if (temp->pipe_right_child->nargs + 1 > size)
+                    if (Cast(U64)(temp->pipe_right_child->nargs + 1) > size)
                     {
-                        size += 2;
-                        temp->pipe_right_child->args =
-                        realloc(temp->pipe_right_child->args, size);
+                        right_size += 2;
+                        temp->pipe_right_child->args = realloc(temp->pipe_right_child->args, right_size);
                     }
                     temp->pipe_right_child->args[temp->pipe_right_child->nargs] = ast_new();
                     temp->pipe_right_child->args[temp->pipe_right_child->nargs]->type = AST_STRING_LITERAL;
