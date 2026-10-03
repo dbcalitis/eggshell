@@ -131,7 +131,12 @@ struct token
 AST *
 ast_new(void)
 {
-  AST *tree = Cast(AST *)malloc(sizeof(AST));
+  AST *tree = Cast(AST *)calloc(1, sizeof *tree);
+  if (tree == NULL)
+  {
+      perror("calloc");
+      exit(EXIT_FAILURE);
+  }
 
   return tree;
 }
