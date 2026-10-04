@@ -23,6 +23,7 @@
 #include <errno.h>
 
 #include "common.h"
+#include "memory.h"
 
 #define static_arr_size(arr) (sizeof(arr) / sizeof(*(arr)))
 
@@ -678,6 +679,7 @@ lex(
         Token *t,
         const char **line)
 {
+    return TOKEN_ERROR;
 }
 
 Int
@@ -685,4 +687,5 @@ parse(
         AST **out,
         const char *line)
 {
+    return 0;
 }
