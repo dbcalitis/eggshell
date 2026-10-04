@@ -141,6 +141,57 @@ ast_new(void)
   return tree;
 }
 
+void
+ast_free(AST *node)
+{
+    if (node == NULL) { return; }
+
+    switch ((enum ast_type) node->type)
+    {
+        case AST_COMMAND:
+        {
+            free(node->command_name);
+
+            for (Int i = 0; i < node->nargs; i++)
+            {
+                ast_free(node->args[i]);
+            }
+
+            free(node->args);
+            break;
+        }
+        case AST_STRING_LITERAL:
+        {
+            free(node->string_literal);
+            break;
+        }
+        case AST_PIPE:
+        {
+            ast_free(node->pipe_left_child);
+            ast_free(node->pipe_right_child);
+            break;
+        }
+        case AST_REDIRECTION:
+        {
+            free(node->redir_type);
+            free(node->target);
+            ast_free(node->command);
+            break;
+        }
+        case AST_CAPTURE_STRING:
+        {
+            free(node->string_literal);
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    free(node);
+}
+
 char input_buffer[BUFF_SIZE] = "\0";
 char display_line[BUFF_SIZE] = "\0";
 
@@ -200,65 +251,115 @@ main(
     fflush(stdout);
 
     // Shell input loop
-    while (length != -1 && input_buffer[0] != 17) // CTRLQ
+    char c = '\0';
+
+    printf("\033[1;1H\033[2J");
+    printf("%s\n\r > ", curr_path);
+    fflush(stdout);
+
+    for (;;)
     {
-        input_buffer[length] = '\0';
-        printf("\r > %s", display_line);
+        // Redraw the current input line.
+        // Raw mode disabled terminal echo, so we print it ourselves
+        printf("\r\033[2K > %s", display_line);
         fflush(stdout);
+        
+        S64 result = read(STDIN_FILENO, &c, 1);
 
-        length = read(STDIN_FILENO, input_buffer, sizeof(input_buffer));
+        if (result == 0) break;
 
-        // Ignore Esc characters; includes arrow keys
-        if (input_buffer[0] == '\033') { continue; }
-
-        if (input_buffer[0] == 127) // BSPACE
+        if (result < 0)
         {
-            current_history = NULL;
-            display_line[strlen(display_line) - 1] = '\0';
+            if (errno == EINTR) { continue; }
+            
+            perror("read");
+            break;
         }
-        else if (input_buffer[0] == 13) // ENTER
+
+        // CTRL-Q
+        if (c == 17) break;
+
+        if (c == '\033')
+        {
+            char sequence = '\0';
+
+            if (read(STDIN_FILENO, &sequence, 1) == 1
+                    && sequence == '[')
+            {
+                read(STDIN_FILENO, &sequence, 1);
+            }
+
+            continue;
+        }
+
+        // Backspace
+        if (c == 127)
         {
             current_history = NULL;
-            add_history(display_line);
 
-            AST *tree;
-            parse(&tree, display_line);
+            U64 display_length = strlen(display_line);
+            if (display_length > 0) { display_line[display_length - 1] = '\0'; }
 
-            disable_raw_mode();
-            egg_execute_cmd(tree);
-            enable_raw_mode();
+            continue;
+        }
+
+        // Enter
+        if (c == '\r')
+        {
+            current_history = NULL;
+
+            if (display_line[0] != '\0') { add_history(display_line); }
+
+            printf("\r\n");
+            
+
+            // TODO: daria: lexing, parsing, execution
 
             display_line[0] = '\0';
-            printf("\r\n\r%s\n\r", curr_path);
+            printf("%s\n\r > ", curr_path);
+            fflush(stdout);
+
+            continue;
         }
-        else if (input_buffer[0] == 11) // CTRLK Go to older history
+
+        // CTRL-K - go to older history
+        if (c == 11)
         {
-            if (get_history(&current_history, 1) == 1)
+            if (get_history(&current_history, 1))
             {
-                strcpy(display_line, current_history->line);
+                snprintf(
+                        display_line,
+                        sizeof display_line,
+                        "%s",
+                        current_history->line);
             }
+            continue;
         }
-        else if (input_buffer[0] == 10) // CTRLJ Go to newer history
+
+        // CTRL-J - go to newer history
+        if (c == 10)
         {
             if (get_history(&current_history, 0))
             {
-                strcpy(display_line, current_history->line);
+                snprintf(
+                        display_line,
+                        sizeof display_line,
+                        "%s",
+                        current_history->line);
             }
-        }
-        else if (input_buffer[0] == 9) // TAB for autocompletion
-        {
-            // TODO(daria): make autocomplete with bash
-        }
-        else 
-        {
-            if (strlen(display_line) + strlen(input_buffer) < BUFF_SIZE)
-            {
-                strcat(display_line, input_buffer);
-            }
+            continue;
         }
 
-        // clears current display line
-        printf("\033[1G\033[2K");
+        // TAB - TODO: autocompletion
+        if (c == '\t') { continue; }
+
+        U64 length = strlen(display_line);
+
+        if (length + 1 < sizeof display_line)
+        {
+            display_line[length] = c;
+            display_line[length + 1] = '\0';
+        }
     }
 
     return 0;
@@ -274,7 +375,6 @@ void
 enable_raw_mode()
 {
     tcgetattr(STDIN_FILENO, &orig_termios);
-    atexit(disable_raw_mode);
 
     // disables echo and canonical mode
     struct termios raw = orig_termios;
@@ -676,32 +776,48 @@ lex(
     }
     else
     {
-        *t = (Token) {.type = TOKEN_STRING, .value = calloc(sizeof(char), 10)};
-        size_t is_str_lit = 0;
+        U64 length = 0;
+        U64 capacity = 16;
+        
+        char *value = malloc(capacity);
 
-        if (**s == '"')
+        if (value == NULL)
         {
-            (*s)++;
-            is_str_lit = 1;
+            t->type = TOKEN_ERROR;
+            t->value = NULL;
+            return TOKEN_ERROR;
         }
 
-        while (**s != '\0' && **s != ' ')
+        while (**line != '\0'
+                && !isspace(Cast(unsigned char)**line)
+                && **line != '|'
+                && **line != '<'
+                && **line != '>')
         {
-            // TODO(daria): account for format string ${}
-            if (is_str_lit && **s == '"') { return TOKEN_STRING; }
-
-            size_t len = strlen((t->value));
-            size_t size = 10;
-
-            if (len + 1 > sizeof(*(t->value)))
+            if (length + 1 >= capacity)
             {
-                size += 5;
-                t->value = realloc(t->value, size);
-                t->value[size + 1] = '\0';
+                capacity *= 2;
+
+                char *temp = realloc(value, capacity);
+
+                if (temp == NULL)
+                {
+                    free(value);
+                    t->type = TOKEN_ERROR;
+                    t->value = NULL;
+                    return TOKEN_ERROR;
+                }
+
+                value = temp;
             }
-            t->value[len++] = **s;
-            (*s)++;
+
+            value[length++] = *(*line)++;
         }
+
+        value[length] = '\0';
+        
+        t->type = TOKEN_STRING;
+        t->value = value;
 
         return TOKEN_STRING;
     }
