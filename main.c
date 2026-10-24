@@ -1,29 +1,19 @@
-#include <ctype.h>
-#include <termios.h>
-#include <unistd.h>
-
-#include <stddef.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <locale.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <locale.h>
-
 #include <sys/mman.h>
 #include <sys/stat.h>
-
-#include <pwd.h>
-#include <spawn.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-
-#include <fcntl.h>
-
-#include <stdint.h>
-#include <errno.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include "common.h"
 #include "memory.h"
+#include "tokenizer.h"
 
 #define static_arr_size(arr) (sizeof(arr) / sizeof(*(arr)))
 
@@ -55,20 +45,6 @@ char *curr_path = NULL;
 
 char *egg_args[BUFF_SIZE]; // edit the amount later
 Int egg_nargs = 0;
-
-enum token_type
-{
-    TOKEN_ERROR = -1,
-    TOKEN_LPAREN = 0,
-    TOKEN_RPAREN,
-    TOKEN_IDENT,
-    TOKEN_STRING,
-    TOKEN_PIPE,
-    TOKEN_REDIRECTION,
-    TOKEN_BACKGROUND,
-    TOKEN_ENV_VAR,
-    TOKEN_EOF
-};
 
 enum ast_type
 {
@@ -112,13 +88,6 @@ struct ast
             char *string_literal;
         };
     };
-};
-
-typedef struct token Token;
-struct token
-{
-  enum token_type type;
-  char *value;
 };
 
 AST *
@@ -217,7 +186,6 @@ static Int (*builtin_func[])(char **, Int) = {
     egg_exit
 };
 
-enum token_type lex(Token *t, const char **line);
 Int parse(AST **out, const char *line);
 // PERF(daria): memory leaks from ast
 
@@ -233,7 +201,7 @@ main(
 
     enable_raw_mode();
 
-    S64 length = 0;
+    // S64 length = 0; I don't know what this is for
 
     curr_path = getcwd(NULL, 0);
 
@@ -249,6 +217,9 @@ main(
     printf("\033[1;1H\033[2J");
     printf("%s\n\r > ", curr_path);
     fflush(stdout);
+
+    Tokenizer tokenizer = { 0 };
+    reset_tokenizer(&tokenizer);
 
     for (;;)
     {
@@ -304,9 +275,36 @@ main(
             if (display_line[0] != '\0') { add_history(display_line); }
 
             printf("\r\n");
-            
 
-            // TODO: daria: lexing, parsing, execution
+            // TODO: daria: parsing, execution
+            // Reset tokenizer
+            reset_tokenizer(&tokenizer);
+            tokenizer.input = Cast(const U8 *)&display_line[0];
+            tokenizer.current_byte = Cast(const U8 *)&display_line[0];
+            Token current_token = {0};
+
+            // DEBUG: daria: loop tokenize
+            for (;;)
+            {
+                Unused(memset(&current_token, 0, sizeof(current_token)));
+                Unused(tokenize(&tokenizer, &current_token));
+                // print token results
+                printf("token: \"%.*s\" : %d\n\r",
+                        current_token.string.length,
+                        current_token.string.data,
+                        current_token.type);
+
+                if (current_token.type == TOKEN_ERROR)
+                {
+                    printf("TokenError\n\r");
+                    break;
+                }
+                if (current_token.type == TOKEN_EOF)
+                {
+                    printf("TokenEOF\n\r");
+                    break;
+                }
+            }
 
             display_line[0] = '\0';
             printf("%s\n\r > ", curr_path);
@@ -346,12 +344,12 @@ main(
         // TAB - TODO: autocompletion
         if (c == '\t') { continue; }
 
-        U64 length = strlen(display_line);
+        U64 display_length = strlen(display_line);
 
-        if (length + 1 < sizeof display_line)
+        if (display_length + 1 < sizeof display_line)
         {
-            display_line[length] = c;
-            display_line[length + 1] = '\0';
+            display_line[display_length] = c;
+            display_line[display_length + 1] = '\0';
         }
     }
 
@@ -672,14 +670,6 @@ egg_execute_cmd(AST *head)
     }
 
   return 1;
-}
-
-enum token_type
-lex(
-        Token *t,
-        const char **line)
-{
-    return TOKEN_ERROR;
 }
 
 Int
