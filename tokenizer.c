@@ -1,6 +1,18 @@
 
+#ifdef DEBUG
+#include <stdio.h>
+#endif
+
 #include "tokenizer.h"
 #include "common.h"
+
+#ifdef DEBUG
+const char * const TOKEN_STRINGS[] = {
+    #define TOKEN(e) #e,
+    TOKENS
+    #undef TOKEN
+};
+#endif
 
 static Int
 is_blank(Int c)
@@ -123,6 +135,13 @@ tokenize(
 
     tokenizer->state = STATE_NEW_TOKEN;
     t_out->type = detected_token_type;
+
+    #ifdef DEBUG
+    printf("DEBUG: Token - \"%.*s\", Type: %s\n\r",
+            token_length,
+            t_out->string.data,
+            TOKEN_STRINGS[detected_token_type]);
+    #endif // DEBUG
 
     return detected_token_type;
 }

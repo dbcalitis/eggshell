@@ -177,11 +177,6 @@ main(
                 }
 
                 Unused(tokenize(&tokenizer, current_token));
-                // print token results
-                printf("token: \"%.*s\" : %d\n\r",
-                        current_token->string.length,
-                        current_token->string.data,
-                        current_token->type);
 
                 if (current_token->type == TOKEN_ERROR)
                 {

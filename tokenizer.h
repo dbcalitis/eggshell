@@ -3,6 +3,21 @@
 
 #include "common.h"
 
+#define TOKENS \
+    TOKEN(TOKEN_ERROR) \
+    TOKEN(TOKEN_LPAREN) \
+    TOKEN(TOKEN_RPAREN) \
+    TOKEN(TOKEN_WORD) \
+    TOKEN(TOKEN_STRING) \
+    TOKEN(TOKEN_SINGLE_QUOTE) \
+    TOKEN(TOKEN_DOUBLE_QUOTE) \
+    TOKEN(TOKEN_PIPE) \
+    TOKEN(TOKEN_REDIRECTION_IN) \
+    TOKEN(TOKEN_REDIRECTION_OUT) \
+    TOKEN(TOKEN_BACKGROUND) \
+    TOKEN(TOKEN_ENV_VAR) \
+    TOKEN(TOKEN_EOF) \
+
 enum tokenizer_state
 {
     STATE_NEW_TOKEN,
@@ -21,20 +36,16 @@ struct tokenizer
 
 enum token_type
 {
-    TOKEN_ERROR = -1,
-    TOKEN_LPAREN = 0,
-    TOKEN_RPAREN,
-    TOKEN_WORD,
-    TOKEN_STRING,
-    TOKEN_SINGLE_QUOTE,
-    TOKEN_DOUBLE_QUOTE,
-    TOKEN_PIPE,
-    TOKEN_REDIRECTION_IN,
-    TOKEN_REDIRECTION_OUT,
-    TOKEN_BACKGROUND,
-    TOKEN_ENV_VAR,
-    TOKEN_EOF
+    #define TOKEN(e) e,
+    TOKENS
+    #undef TOKEN
+    TOKEN_COUNT
 };
+
+#if defined(DEBUG) && !defined(TOKENIZER_H)
+extern const char * const TOKEN_STRINGS[];
+#endif // DEBUG
+
 
 typedef struct token Token;
 struct token
