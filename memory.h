@@ -6,11 +6,10 @@
 typedef struct arena Arena;
 struct arena
 {
-    U8 * memory_start;
-
+    U8 *memory;
     U64 capacity;
-    U64 writable_bytes; // bytes currently PROT_READ | PROT_WRITE
     U64 offset;         // next free byte
+    U64 commited; // bytes currently PROT_READ | PROT_WRITE
     U64 page_size;
 };
 
@@ -21,7 +20,8 @@ struct arena_mark
 };
 
 Int arena_init(Arena *arena, U64 requested_capacity);
-void * arena_alloc(Arena *arena, U64 request_alloc_size);
+void * arena_alloc(Arena *arena, U64 request_alloc_size, U64 alignment);
+void arena_reset(Arena* arena);
 void arena_destroy(Arena* arena);
 
 #endif // MEMORY_H

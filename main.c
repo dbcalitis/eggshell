@@ -43,116 +43,8 @@ Linked_List history = {.head = NULL, .tail = NULL, .length = 0};
 
 char *curr_path = NULL;
 
-char *egg_args[BUFF_SIZE]; // edit the amount later
+char *egg_args[BUFF_SIZE];
 Int egg_nargs = 0;
-
-enum ast_type
-{
-    AST_COMMAND,
-    AST_STRING_LITERAL,
-    AST_PIPE,
-    AST_REDIRECTION,
-    AST_CAPTURE_STRING // $()
-};
-
-typedef struct ast AST;
-struct ast
-{
-    U8 type;
-
-    union
-    {
-        struct
-        {
-            char *command_name;
-            AST **args;
-            Int nargs;
-        };
-
-        struct
-        {
-            AST *pipe_left_child;
-            AST *pipe_right_child;
-        };
-
-        struct
-        {
-            char *redir_type;
-            AST *command;
-            char *target;
-        };
-
-        // edit later
-        struct
-        {
-            char *string_literal;
-        };
-    };
-};
-
-AST *
-ast_new(void)
-{
-  AST *tree = Cast(AST *)calloc(1, sizeof *tree);
-  if (tree == NULL)
-  {
-      perror("calloc");
-      exit(EXIT_FAILURE);
-  }
-
-  return tree;
-}
-
-void
-ast_free(AST *node)
-{
-    if (node == NULL) { return; }
-
-    switch ((enum ast_type) node->type)
-    {
-        case AST_COMMAND:
-        {
-            free(node->command_name);
-
-            for (Int i = 0; i < node->nargs; i++)
-            {
-                ast_free(node->args[i]);
-            }
-
-            free(node->args);
-            break;
-        }
-        case AST_STRING_LITERAL:
-        {
-            free(node->string_literal);
-            break;
-        }
-        case AST_PIPE:
-        {
-            ast_free(node->pipe_left_child);
-            ast_free(node->pipe_right_child);
-            break;
-        }
-        case AST_REDIRECTION:
-        {
-            free(node->redir_type);
-            free(node->target);
-            ast_free(node->command);
-            break;
-        }
-        case AST_CAPTURE_STRING:
-        {
-            free(node->string_literal);
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
-
-    free(node);
-}
 
 char input_buffer[BUFF_SIZE] = "\0";
 char display_line[BUFF_SIZE] = "\0";
@@ -172,8 +64,6 @@ Int egg_cd(char **args, Int nargs);
 
 Int egg_num_builtins(void);
 
-Int egg_execute_cmd(AST *head);
-
 static char *builtin_str[] = {
     "cd",
     "history",
@@ -186,9 +76,6 @@ static Int (*builtin_func[])(char **, Int) = {
     egg_exit
 };
 
-Int parse(AST **out, const char *line);
-// PERF(daria): memory leaks from ast
-
 Int
 main(
         void)
@@ -196,31 +83,28 @@ main(
     setlocale(LC_ALL, "");
     atexit(disable_raw_mode);
 
-    // Clears the screen
-    printf("\033[1;1H\033[2J");
-
     enable_raw_mode();
-
-    // S64 length = 0; I don't know what this is for
 
     curr_path = getcwd(NULL, 0);
 
     Node *current_history = NULL;
     atexit(clear_history);
 
+    printf("\033[1;1H\033[2J"); // Clears the screen
     printf("%s\n\r > ", curr_path);
     fflush(stdout);
+
+    Tokenizer tokenizer = Cast(Tokenizer){ 0 };
+    reset_tokenizer(&tokenizer);
+
+    Arena arena = Cast(Arena){ 0 };
+    if (arena_init(&arena, 1024 * 1024) == -1)
+    {
+        return 1;
+    }
 
     // Shell input loop
     char c = '\0';
-
-    printf("\033[1;1H\033[2J");
-    printf("%s\n\r > ", curr_path);
-    fflush(stdout);
-
-    Tokenizer tokenizer = { 0 };
-    reset_tokenizer(&tokenizer);
-
     for (;;)
     {
         // Redraw the current input line.
@@ -281,31 +165,37 @@ main(
             reset_tokenizer(&tokenizer);
             tokenizer.input = Cast(const U8 *)&display_line[0];
             tokenizer.current_byte = Cast(const U8 *)&display_line[0];
-            Token current_token = {0};
-
+            
             // DEBUG: daria: loop tokenize
             for (;;)
             {
-                Unused(memset(&current_token, 0, sizeof(current_token)));
-                Unused(tokenize(&tokenizer, &current_token));
+                Token *current_token = Cast(Token *)arena_alloc(
+                        &arena, sizeof(*current_token), _Alignof(Token));
+                if (current_token == NULL)
+                {
+                    printf("TOKEN ALLOCATION = NULL\n\r");
+                }
+
+                Unused(tokenize(&tokenizer, current_token));
                 // print token results
                 printf("token: \"%.*s\" : %d\n\r",
-                        current_token.string.length,
-                        current_token.string.data,
-                        current_token.type);
+                        current_token->string.length,
+                        current_token->string.data,
+                        current_token->type);
 
-                if (current_token.type == TOKEN_ERROR)
+                if (current_token->type == TOKEN_ERROR)
                 {
                     printf("TokenError\n\r");
                     break;
                 }
-                if (current_token.type == TOKEN_EOF)
+                if (current_token->type == TOKEN_EOF)
                 {
                     printf("TokenEOF\n\r");
                     break;
                 }
             }
 
+            arena_reset(&arena);
             display_line[0] = '\0';
             printf("%s\n\r > ", curr_path);
             fflush(stdout);
@@ -352,6 +242,8 @@ main(
             display_line[display_length + 1] = '\0';
         }
     }
+
+    arena_destroy(&arena);
 
     return 0;
 }
@@ -540,142 +432,4 @@ Int
 egg_num_builtins() 
 { 
     return sizeof(builtin_str) / sizeof(char *);
-}
-
-Int
-egg_execute_cmd(AST *head)
-{
-    switch (head->type)
-    {
-        case AST_COMMAND: {
-            char *args[head->nargs + 2];
-            args[0] = head->command_name;
-            size_t nargs = 1;
-
-            args[0] = head->command_name;
-
-            for (Int i = 0; i < head->nargs; i++)
-            {
-                if (head->args[i]->type == AST_STRING_LITERAL)
-                {
-                args[nargs++] = head->args[i]->string_literal;
-                }
-            }
-
-            args[nargs] = NULL;
-
-            // TODO(daria): add builtins
-            printf("\n\r");
-            pid_t pid = fork();
-
-            if (pid == 0)
-            {
-                execvp(head->command_name, args); // fix
-                perror("execvp");
-                exit(EXIT_FAILURE);
-            }
-            else if (pid > 0)
-            {
-                Int status;
-                waitpid(pid, &status, 0);
-
-                if (WIFEXITED(status))
-                {
-                    printf("\n\rChild exited w/ status: %d", WIFEXITED(status));
-                }
-            }
-            else
-            {
-              perror("fork");
-            }
-            break;
-        }
-        case AST_REDIRECTION: {
-            if (strcmp(head->redir_type, ">") == 0)
-            {
-                Int og_stdout = dup(STDOUT_FILENO);
-                Int fd = open(head->target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-
-                if (fd < 0)
-                {
-                    printf("\n\r");
-                    perror("open");
-                    return -1;
-                    // exit(EXIT_FAILURE);
-                }
-
-                dup2(fd, STDOUT_FILENO);
-                close(fd);
-
-                egg_execute_cmd(head->command);
-
-                dup2(og_stdout, STDOUT_FILENO);
-                close(og_stdout);
-                break;
-            }
-            else if (strcmp(head->redir_type, "<") == 0)
-            {
-                Int og_stdin = dup(STDIN_FILENO);
-                Int fd = open(head->target, O_RDONLY);
-
-                if (fd < 0)
-                {
-                    printf("\n\r");
-                    perror("open");
-                    return -1;
-                }
-
-                dup2(fd, STDIN_FILENO);
-                close(fd);
-
-                egg_execute_cmd(head->command);
-
-                dup2(og_stdin, STDIN_FILENO);
-                close(og_stdin);
-            }
-            break;
-        }
-        case AST_PIPE: {
-            Int pipefd[2];
-            pipe(pipefd);
-
-            pid_t pid1 = fork();
-
-            if (pid1 == 0)
-            {
-                close(pipefd[0]);
-                dup2(pipefd[1], STDOUT_FILENO);
-                close(pipefd[1]);
-                egg_execute_cmd(head->pipe_left_child);
-                exit(EXIT_SUCCESS);
-            }
-
-            pid_t pid2 = fork();
-            if (pid2 == 0)
-            {
-                close(pipefd[1]);
-                dup2(pipefd[0], STDIN_FILENO);
-                close(pipefd[0]);
-                egg_execute_cmd(head->pipe_right_child);
-                exit(EXIT_SUCCESS);
-            }
-
-            close(pipefd[0]);
-            close(pipefd[1]);
-
-            waitpid(pid1, NULL, 0);
-            waitpid(pid2, NULL, 0);
-            break;
-        }
-    }
-
-  return 1;
-}
-
-Int
-parse(
-        AST **out,
-        const char *line)
-{
-    return 0;
 }

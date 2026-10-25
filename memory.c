@@ -1,4 +1,3 @@
-
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -15,20 +14,23 @@ round_up(
         U64 alignment,
         U64 *result)
 {
+    Int exit_code = 1;
     U64 remainder = 0;
-    U64 amount_to_add = 0;
+    U64 addition = 0;
 
-    if (alignment == 0 || result == NULL) { return 0; }
+    if (alignment == 0 || result == NULL) { exit_code = 0; }
 
-    remainder = value % alignment;
+    if (exit_code == 1)
+    {
+        remainder = value % alignment;
+        addition = (remainder == 0) ? 0 : alignment - remainder;
+    }
 
-    if (remainder == 0) { amount_to_add = 0; }
-    else { amount_to_add = alignment - remainder; }
+    if (value > SIZE_MAX - addition) { exit_code = 0; }
 
-    if (value > SIZE_MAX - amount_to_add) { return 0; }
+    *result = value + addition;
 
-    *result = value + amount_to_add;
-    return 1;
+    return exit_code;
 }
 
 Int
@@ -36,59 +38,79 @@ arena_init(
         Arena *arena,
         U64 requested_capacity)
 {
-    S64 system_page_size = 0;
-    U64 rounded_capacity;
-    void *memory;
+    Int exit_code = 0;
+    S64 page_size = 0;
+    U64 rounded_capacity = 0;
+    void *memory = NULL;
 
-    if (arena == NULL)
+    if (arena == NULL || requested_capacity == 0)
     {
         errno = EINVAL;
-        return -1;
+        exit_code = -1;
     }
 
-    memset(arena, 0, sizeof *arena);
+    *arena = Cast(Arena){0};
 
-    system_page_size = sysconf(_SC_PAGESIZE);
-    if (system_page_size <= 0)
+    page_size = sysconf(_SC_PAGESIZE);
+
+    if (page_size <= 0)
     {
         errno = EINVAL;
-        return -1;
+        exit_code = -1;
     }
 
-    arena->page_size = Cast(U64)system_page_size;
-
-    void *allocated = mmap(NULL, requested_capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
-
-    if (!round_up(requested_capacity, arena->page_size, &rounded_capacity))
+    if (exit_code == 0
+        && !round_up(requested_capacity,
+                    page_size,
+                    &rounded_capacity))
     {
-        errno = EINVAL;
-        return -1;
+        errno = EOVERFLOW;
+        exit_code = -1;
     }
 
-    memory = mmap(NULL, rounded_capacity, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (exit_code == 0)
+    {
+        memory = mmap(
+                NULL,
+                rounded_capacity,
+                PROT_NONE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1,
+                0);
+    }
 
-    if (memory == MAP_FAILED) { return -1; }
+    if (memory == MAP_FAILED)
+    { 
+        exit_code = -1;
+    }
 
-    arena->memory_start = allocated;
-    arena->capacity = rounded_capacity;
-    arena->offset = 0;
+    if (exit_code == 0)
+    {
+        arena->memory = memory;
+        arena->capacity = rounded_capacity;
+        arena->offset = 0;
+        arena->page_size = page_size;
+    }
 
-    return 0;
+    return exit_code;
 }
 
 void *
 arena_alloc(
         Arena *arena,
-        U64 request_alloc_size)
+        U64 request_alloc_size,
+        U64 alignment)
 {
     U64 allocation_start = 0;
     U64 allocation_end = 0;
     U64 required_writable_bytes = 0;
-    U64 alignment = 0;
 
     if (arena == NULL
-        || arena->memory_start == NULL
-        || request_alloc_size == 0)
+        || arena->memory == NULL
+        || request_alloc_size == 0
+        || alignment == 0
+        || (alignment & (alignment - 1)) != 0
+        || alignment > arena->page_size)
     {
         errno = EINVAL;
         return NULL;
@@ -115,30 +137,43 @@ arena_alloc(
         return NULL;
     }
 
-    if (required_writable_bytes > arena->writable_bytes)
+    if (required_writable_bytes > arena->commited)
     {
-        U64 length = required_writable_bytes - arena->writable_bytes;
+        U64 length = required_writable_bytes - arena->commited;
 
-        if (mprotect(arena->memory_start + arena->writable_bytes, length, PROT_READ | PROT_WRITE) == -1)
+        if (mprotect(arena->memory + arena->commited, length, PROT_READ | PROT_WRITE) == -1)
         {
             return NULL;
         }
 
-        arena->writable_bytes = required_writable_bytes;
+        arena->commited = required_writable_bytes;
     }
 
     arena->offset = allocation_end;
 
-    return arena->memory_start + allocation_start;
+    return arena->memory + allocation_start;
 }
 
 void
-arena_destroy(
-        Arena* arena)
+arena_reset(Arena* arena)
+{
+    if (arena == NULL || arena->memory == NULL)
+    {
+        return;
+    }
+
+    arena->offset = 0;
+}
+
+void
+arena_destroy(Arena* arena)
 {
     if (arena == NULL) { return; }
     
-    if (arena->memory_start != NULL) { munmap(arena->memory_start, arena->capacity); }
+    if (arena->memory != NULL)
+    {
+        munmap(arena->memory, arena->capacity); 
+    }
 
-    memset(arena, 0, sizeof *arena);
+    *arena = Cast(Arena){0};
 }
