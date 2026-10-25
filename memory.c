@@ -39,7 +39,7 @@ arena_init(
         U64 requested_capacity)
 {
     Int exit_code = 0;
-    S64 page_size = 0;
+    U64 page_size = 0;
     U64 rounded_capacity = 0;
     void *memory = NULL;
 
@@ -51,12 +51,18 @@ arena_init(
 
     *arena = Cast(Arena){0};
 
-    page_size = sysconf(_SC_PAGESIZE);
-
-    if (page_size <= 0)
     {
-        errno = EINVAL;
-        exit_code = -1;
+        S64 signed_page_size = sysconf(_SC_PAGESIZE);
+
+        if (signed_page_size <= 0)
+        {
+            errno = EINVAL;
+            exit_code = -1;
+        }
+        else
+        {
+            page_size = Cast(U64)signed_page_size;
+        }
     }
 
     if (exit_code == 0
