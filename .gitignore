@@ -1,1 +1,3 @@
 eggshell
+tokenizer.so
+tests/__pycache__
